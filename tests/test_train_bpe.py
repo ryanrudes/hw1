@@ -47,9 +47,6 @@ def test_train_bpe():
             )
             for merge_token_1, merge_token_2 in gpt2_reference_merges
         ]
-    print(len(merges), len(reference_merges))
-    for i in range(len(merges)):
-        print(merges[i], reference_merges[i], merges[i] == reference_merges[i], merges[i] > reference_merges[i])
     assert merges == reference_merges
 
     # Compare the vocab to the expected output vocab

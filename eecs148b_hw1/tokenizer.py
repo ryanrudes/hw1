@@ -89,7 +89,7 @@ def add_word(
     for pair in iter_pairs(word):
         pair_counts[pair] += freq
         pair_to_words[pair].add(word)
-        
+
         bytes_pair = (vocab[pair[0]], vocab[pair[1]])
         heapq.heappush_max(heap, (pair_counts[pair], bytes_pair, pair))
 
@@ -98,6 +98,8 @@ def remove_word(
     word_freq: int,
     pair_counts: Counter[intpair],
     pair_to_words: dict[intpair, set[intlist]],
+    vocab: list[bytes],
+    heap: list[tuple[int, tuple[bytes, bytes], intpair]],
 ):
     """
     Remove a word from the pair counts and pair to words.
@@ -107,6 +109,9 @@ def remove_word(
         freq (int): The frequency of the word.
         pair_counts (Counter[intpair]): The counter of pair counts.
         pair_to_words (dict[intpair, set[intlist]]): The dictionary of pair to words.
+        vocab (list[bytes]): Current id -> bytes mapping (same as train_bpe).
+        heap: Lazy max-heap of (count, bytes_pair, pair); must push after each decrement
+            so a heap entry exists for the current count (add_word already pushes on add).
     """
     for pair in iter_pairs(word):
         pair_counts[pair] -= word_freq
@@ -115,6 +120,9 @@ def remove_word(
 
         if pair_counts[pair] == 0:
             pair_counts.pop(pair)
+        else:
+            bytes_pair = (vocab[pair[0]], vocab[pair[1]])
+            heapq.heappush_max(heap, (pair_counts[pair], bytes_pair, pair))
 
         pair_to_words[pair].discard(word)
 
@@ -134,8 +142,8 @@ def pop_best_pair(
     """
     while heap:
         count, bytes_pair, pair = heapq.heappop_max(heap)
-        # Heap is lazy: add_word pushes updates but remove_word does not remove old
-        # entries, so counts on the heap often lag pair_counts — skip stale pops.
+        # Heap is lazy: old entries may remain until skipped; add_word and remove_word
+        # both push the current count so a matching entry exists for each live pair.
         if count > 0 and pair_counts.get(pair, 0) == count:
             return pair
     return None
@@ -233,7 +241,7 @@ def train_bpe(
             f"plus the number of single-byte tokens (256)")
 
     # Read the text corpus from the given filepath
-    with open(input_path, "r") as file:
+    with open(input_path, "r", encoding="utf-8") as file:
         text = file.read()
 
     # Initialize the vocabulary with the single-byte tokens
@@ -243,7 +251,7 @@ def train_bpe(
     merges: list[bytepair] = []
 
     documents = split_documents(text, special_tokens)
-    
+
     word_counts: Counter[intlist] = collect_pretoken_counts(documents)
     pair_counts: Counter[intpair] = Counter()
 
@@ -255,7 +263,7 @@ def train_bpe(
         for pair in iter_pairs(word):
             pair_counts[pair] += freq
             pair_to_words[pair].add(word)
-    
+
     for pair, count in pair_counts.items():
         bytes_pair = (vocab[pair[0]], vocab[pair[1]])
         heapq.heappush_max(heap, (count, bytes_pair, pair))
@@ -266,7 +274,7 @@ def train_bpe(
 
     while len(vocab) + len(special_tokens) < vocab_size:
         best_pair = pop_best_pair(heap, pair_counts)
-        
+
         if best_pair is None:
             break
 
@@ -282,12 +290,13 @@ def train_bpe(
             #if freq == 0:
             #    continue
 
-            remove_word(word, freq, pair_counts, pair_to_words)
+            remove_word(word, freq, pair_counts, pair_to_words, vocab, heap)
 
             new_word = merge_word(word, best_pair, new_id)
 
-            #del word_counts[word]
-            word_counts[new_word] += freq
+            assert new_word not in word_counts
+
+            word_counts[new_word] = freq
 
             add_word(new_word, freq, pair_counts, pair_to_words, vocab, heap)
 
@@ -297,7 +306,7 @@ def train_bpe(
 
     # Add the special tokens to the vocabulary
     for token in special_tokens:
-        vocab[len(vocab)] = token.encode()
+        vocab[len(vocab)] = token.encode("utf-8")
 
     return vocab, merges
 
@@ -345,7 +354,7 @@ class Tokenizer:
         return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
-        bytes_to_id = {token_bytes: token_id for token_id, token_bytes in self.vocab.items()}
+        bytes_to_id = {token_bytes: token_id for token_id, token_bytes in self.vocab}
         merge_ranks = {pair: rank for rank, pair in enumerate(self.merges)}
         specials = self.special_tokens or []
 
