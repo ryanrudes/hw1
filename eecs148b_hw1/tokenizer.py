@@ -24,8 +24,10 @@ PAT = re.compile(r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\
 DEFAULT_VOCAB_SIZE = 10000
 
 # The list of special tokens, which are not to be split into sub-tokens
+EOS_TOKEN = "<|endoftext|>"
+
 DEFAULT_SPECIAL_TOKENS = [
-    "<|endoftext|>",  # End-of-sequence
+    EOS_TOKEN,
 ]
 
 def iter_pairs(word: intlist) -> Iterator[intpair]:
@@ -339,6 +341,13 @@ class Tokenizer:
         self.vocab = vocab
         self.merges = merges
         self.special_tokens = special_tokens
+        
+        for token_id, token_bytes in self.vocab.items():
+            if token_bytes == EOS_TOKEN.encode("utf-8"):
+                self.eos_token_id = token_id
+                break
+        else:
+            raise ValueError(f"EOS token not found in vocabulary")
 
     @classmethod
     def from_files(
@@ -354,7 +363,7 @@ class Tokenizer:
         return cls(vocab, merges, special_tokens)
 
     def encode(self, text: str) -> list[int]:
-        bytes_to_id = {token_bytes: token_id for token_id, token_bytes in self.vocab}
+        bytes_to_id = {token_bytes: token_id for token_id, token_bytes in self.vocab.items()}
         merge_ranks = {pair: rank for rank, pair in enumerate(self.merges)}
         specials = self.special_tokens or []
 
@@ -395,25 +404,3 @@ class Tokenizer:
 
     def decode(self, ids: list[int]) -> str:
         return b"".join(self.vocab[tok] for tok in ids).decode("utf-8", errors="replace")
-
-"""
-vocab, merges = train_bpe(Path("/Users/ryanrudes/GitHub/cs148b/hw1/data/TinyStoriesV2-GPT4-train.txt"))
-
-import pickle
-with open("vocab.pkl", "wb") as f:
-    pickle.dump(vocab, f)
-with open("merges.pkl", "wb") as f:
-    pickle.dump(merges, f)
-"""
-
-"""
-import pickle
-with open("vocab.pkl", "rb") as f:
-    vocab = pickle.load(f)
-with open("merges.pkl", "rb") as f:
-    merges = pickle.load(f)
-
-encoded = encode("Hello, how are you?", merges, vocab)
-decoded = decode(encoded, vocab)
-print(decoded)
-"""

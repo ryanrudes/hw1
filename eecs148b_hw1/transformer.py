@@ -38,7 +38,7 @@ class Transformer(nn.Module):
         self.ln_final = LayerNorm(d_model, eps=ln_eps, device=device, dtype=dtype)
         self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
 
-        self.token_positions = torch.arange(context_length, device=device, dtype=dtype)
+        self.token_positions = torch.arange(context_length, device=device, dtype=torch.long)
 
     def forward(self, x: Tensor) -> Tensor:
         B, T = x.shape
